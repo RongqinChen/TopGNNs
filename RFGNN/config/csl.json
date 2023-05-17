@@ -1,0 +1,42 @@
+{
+    "datamodule_name": "CSL_DataModule",
+    "datamodule_args_dict": {
+        "fold_idx": null,
+        "batch_size": 9,
+        "num_workers": 0,
+        "transform": "to_TPF",
+        "transform_fn_kwargs": {}
+    },
+    "nn_model_name": "RFGNN_Predictor",
+    "nn_model_args_dict": {
+        "height": null,
+        "node_feat_dim": "datamodule.num_node_attributes",
+        "node_label_sizes": "datamodule.num_node_labels",
+        "edge_feat_dim": "datamodule.num_edge_attributes",
+        "edge_label_sizes": "datamodule.num_edge_labels",
+        "graph_feat_dim": "datamodule.num_graph_attributes",
+        "graph_label_size": "datamodule.num_graph_labels",
+        "hidden_dim": 32,
+        "dropout_p": 0.0,
+        "graph_dropout_p": 0.25,
+        "readout": "sum"
+    },
+    "loss_module_name": "torch.nn.CrossEntropyLoss",
+    "loss_module_args_dict": {},
+    "lr": 1e-03,
+    "min_lr": 1e-05,
+    "optimizer_name": "Adam",
+    "optimizer_args": {
+        "weight_decay": 0
+    },
+    "min_num_epochs": 350,
+    "max_num_epochs": 350,
+    "schedule_step": 50,
+    "early_stoping_patience": 50,
+    "higher_better": true,
+    "eval_train_step": 1,
+    "lr_decay_factor": 0.5,
+    "save_model_step": null,
+    "test_only_when_improved": false,
+    "seed": 114514
+}
