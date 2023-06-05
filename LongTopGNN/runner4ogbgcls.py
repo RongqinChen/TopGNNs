@@ -1,15 +1,13 @@
 import argparse
 import json
-import os
-import time
 from datetime import datetime
-from typing import Tuple
-
-import torch
-from tqdm import tqdm
-
 from trainutils import Config, TrainerBase
-
+from torch import Tensor
+import os
+import torch
+import time
+from typing import Tuple
+from tqdm import tqdm
 os.environ['TZ'] = 'Asia/Shanghai'
 time.tzset()
 
@@ -17,76 +15,105 @@ time.tzset()
 class Trainer(TrainerBase):
     def __init__(self, config: Config) -> None:
         super().__init__(config)
+        self._has_nan = {'molchembl', 'molpcba', 'molmuv',
+                         'moltox21', 'moltoxcast'}
 
-    def train_batch(self, batched_graph) -> float:
-        batched_graph = batched_graph.to(self.device)
-        loss_module_name = self.loss_module.__class__.__name__.lower()
-        if 'crossentropy' in loss_module_name:
-            targets = batched_graph.targets.squeeze(1)
-        if 'bcewithlogitsloss' in loss_module_name:
-            targets = batched_graph.targets.float()
+    def get_targets(self, graph_batch):
+        task_type = self.data_module.task_type
+        if 'class' in task_type:
+            targets = graph_batch.graph_label
+            if 'binary' in task_type:
+                targets = targets.float()
+            # if self.num_tasks == 1:
+            #     targets = targets.squeeze(1)
+        else:
+            targets = graph_batch.graph_attr
+
+        # print(task_type)
+        # print(graph_batch.graph_label)
+        # print(graph_batch.graph_attr)
+        return targets
+
+    def train_batch(self, graph_batch) -> float:
+        graph_batch = graph_batch.to(self.device)
+
+        if graph_batch.batch_size < 8:
+            # print("A batch skipped")
+            # print("due to graphs.batch_size() < 8")
+            return 0.
+        num_nodes = graph_batch.num_nodes
+        if num_nodes < 8:
+            # print("A batch skipped")
+            # print("due to min(num_nodes) < 8")
+            return 0.
 
         self.optimizer.zero_grad()
-        preds = self.nn_model(batched_graph)
-        loss = self.loss_module(preds, targets)
+        preds = self.nn_model(graph_batch)
+
+        targets = self.get_targets(graph_batch)
+        if str(self.data_module)[5:] in self._has_nan:
+            notnan_mask = targets == targets
+            preds = preds[notnan_mask]
+            targets = targets[notnan_mask]
+
+        loss: Tensor = self.loss_module(preds, targets)
         loss.backward()
         self.optimizer.step()
         loss_val = loss.item()
         return loss_val
 
-    def evaluate_epoch(self, loader, data_split) -> Tuple[float, float]:
+    def evaluate_epoch(self, loader, data_split) -> "Tuple[float, float]":
         targets_list = []
         preds_list = []
         self.nn_model.eval()
         with torch.no_grad():
             with tqdm(loader, total=len(loader), dynamic_ncols=True,
                       disable=self.disable_tqdm) as batches_tqdm:
-                for idx, batched_graph in enumerate(batches_tqdm):
+                for idx, graph_batch in enumerate(batches_tqdm):
                     desc = f'Evaluating on {data_split} set'
                     desc = f'{desc:30s} | Iteration #{idx+1}/{len(loader)}'
                     batches_tqdm.set_description(desc)
-                    batched_graph = batched_graph.to(self.device)
-                    targets = batched_graph.targets
-                    targets_list.append(targets)
-                    preds = self.nn_model(batched_graph)
-                    preds_list.append(preds)
+                    graph_batch = graph_batch.to(self.device)
+                    preds = self.nn_model(graph_batch)
+                    preds_list.append(preds.detach().cpu())
+                    targets = self.get_targets(graph_batch)
+                    targets_list.append(targets.cpu())
 
-            targets = torch.concat(targets_list, 0)
-            preds = torch.concat(preds_list, 0)
-            loss_module_name = self.loss_module.__class__.__name__.lower()
-            if 'crossentropy' in loss_module_name:
-                targets = targets.squeeze(1)
-            if 'bcewithlogitsloss' in loss_module_name:
-                targets = targets.float()
-            score = self.evaluator(preds, targets)
-            loss = self.loss_module(preds, targets).detach().cpu().item()
-
+        targets = torch.concat(targets_list, 0)
+        preds = torch.concat(preds_list, 0)
+        score = self.evaluator(preds, targets)
+        if str(self.data_module)[5:] in self._has_nan:
+            notnan_mask = targets == targets
+            preds = preds[notnan_mask]
+            targets = targets[notnan_mask]
+        loss = self.loss_module(preds, targets).item()
         return loss, score
 
 
 def set_config(args):
-    config_path = 'RFGNN/config/tud.json'
+    config_path = 'LongTopGNN/config/ogbgcls.json'
     with open(config_path, 'r') as rfile:
         config_dict: dict = json.load(rfile)
 
     datamodule_args_dict = config_dict['datamodule_args_dict']
     datamodule_args_dict['name'] = args.dataset_name
     datamodule_args_dict['transform_fn_kwargs']['height'] = args.tree_height
+    config_dict['nn_model_args_dict']['hilayers'] = args.hilayers
     config_dict['nn_model_args_dict']['height'] = args.tree_height
     config_dict['nn_model_args_dict']['readout'] = args.readout
     config_dict['loss_module_name'] = args.loss_module_name
     config_dict['disable_tqdm'] = args.disable_tqdm
 
     config = Config()
-    config.config_key = f"{datamodule_args_dict['name']}.T{args.tree_height}."
-    timestamp = time.strftime("%y%m%d_%H%M%S")
-    config.config_key += f"{args.readout}/{timestamp}"
-    config.seed = datamodule_args_dict['seed']
+    dname = args.dataset_name.split('-')[1]
+    config.config_key = \
+        f"{dname}.Hi{args.hilayers}.T{args.tree_height}.{args.readout}" # noqa
+    config.seed = config_dict['seed']
     config.fold_idx = None
     config.device = 0
     config.datamodule_name = f"datautils.{config_dict['datamodule_name']}"
     config.datamodule_args_dict = datamodule_args_dict
-    config.nn_model_name = f"RFGNN.{config_dict['nn_model_name']}"
+    config.nn_model_name = f"LongTopGNN.{config_dict['nn_model_name']}"
     config.nn_model_args_dict = config_dict['nn_model_args_dict']
     config.loss_module_name = config_dict['loss_module_name']
     config.loss_module_args_dict = config_dict['loss_module_args_dict']
@@ -109,10 +136,12 @@ def set_config(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Evaluating the performance of RFGNN on TU datasets.')
-    parser.add_argument('--dataset_name', type=str, default='NCI1')
-    parser.add_argument('--tree_height', type=int, default=6)
-    parser.add_argument('--loss_module_name', type=str)
+        description='Evaluating LongTopGNN\'s performance on OGBG datasets.')
+    parser.add_argument('--dataset_name', type=str, default='ogbg-molhiv')
+    parser.add_argument('--hilayers', type=int)
+    parser.add_argument('--tree_height', type=int)
+    parser.add_argument('--loss_module_name', type=str,
+                        default='torch.nn.BCEWithLogitsLoss')
     parser.add_argument('--readout', type=str, default='sum')
     parser.add_argument('--num_runs', type=int, default=10)
     parser.add_argument('--disable_tqdm', action='store_true')
@@ -121,7 +150,6 @@ def main():
     config = set_config(args)
     for fold_idx in range(1, args.num_runs+1):
         config.fold_idx = fold_idx
-        config.datamodule_args_dict['fold_idx'] = fold_idx
         try:
             trainer = Trainer(config)
             trainer.run()

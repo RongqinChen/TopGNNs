@@ -10,10 +10,11 @@ import numpy as np
 def parse_label(label):
     items = label.split('/')
     dname = items[2]
-    mname = items[3].split('_')[0]
+    mname = items[3]
     key = items[4]
-    fold = items[5]
-    return dname, mname, key, fold
+    timestamp = items[5]
+    fold = items[6]
+    return dname, mname, key, timestamp, fold
 
 
 def extract_results(src_dir, dst_path):
@@ -33,12 +34,15 @@ def extract_results(src_dir, dst_path):
             for label, result in result_dict.items():
                 # if result['best_epoch'] == 0:
                 #     continue
-                dname, mname, key, fold = parse_label(label)
+                dname, mname, key, timestamp, fold = parse_label(label)
                 results_dict['dname'].append(dname)
                 results_dict['mname'].append(mname)
                 results_dict['key'].append(key)
+                results_dict['timestamp'].append(timestamp)
                 results_dict['fold'].append(fold)
                 for rkey, rval in result.items():
+                    if isinstance(rval, list):
+                        rval = '-'.join(map(str, rval))
                     results_dict[rkey].append(rval)
 
             results_dict2 = dict()
@@ -52,13 +56,30 @@ def extract_results(src_dir, dst_path):
                 else:
                     rval_set_str = "-".join(
                         [f"{val}" for val in sorted(set(rval_list))])
-                    results_dict2[f"{rkey}_set"] = rval_set_str
+                    results_dict2[rkey] = rval_set_str
 
+            main_key_list = [
+                "dname",
+                "mname",
+                "key", "timestamp",
+                "train_ACC_mean",
+                "train_ACC_std",
+                "valid_ACC_mean",
+                "valid_ACC_std",
+                "best_epoch_mean",
+                "num_parameters",
+                "num_fold",
+                "best_epoch_std",
+                "train_loss_mean",
+                "train_loss_std",
+                "valid_loss*_mean",
+                "valid_loss*_std",
+                "height"
+            ]
             if len(results_dict2) > 0:
-                key_list = list(results_dict2.keys())
-                val_list = [results_dict2[key] for key in key_list]
+                val_list = [results_dict2[key] for key in main_key_list]
                 if flag:
-                    print(*key_list, sep=',', file=dst_file)
+                    print(*main_key_list, sep=',', file=dst_file)
                     flag = False
                 print(*val_list, sep=',', file=dst_file)
 

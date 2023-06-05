@@ -130,7 +130,7 @@ class CSLDataset(Dataset):
             self.transed_path = None
 
     def get_split(self, fold_idx):
-        if os.path.exists(self.split_path):
+        if os.path.exists(self.split_path) and False:
             with open(self.split_path, 'rb') as rbf:
                 class_idx_list = pkl.load(rbf)
         else:

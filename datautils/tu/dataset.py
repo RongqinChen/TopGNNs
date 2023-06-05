@@ -1,7 +1,7 @@
 import os
 import os.path as osp
 from typing import Any, Callable, List, Optional, Union
-
+import time
 import torch
 from torch.utils.data import Subset
 from torch_geometric.datasets import TUDataset
@@ -73,6 +73,7 @@ class MyTUDataset(TUDataset):
             if self._transform_fn is None:
                 print(f"Loading cached dataset from `{self.vanilla_path}` ...")
             else:
+                time_begin = time.process_time()
                 dataset, _, _ = torch.load(self.vanilla_path)
                 vanilla_graph_list = dataset.uncollate()
                 tran_graph_list: List[Graph] = [
@@ -80,6 +81,10 @@ class MyTUDataset(TUDataset):
                     for graph in tqdm(vanilla_graph_list, dynamic_ncols=True,
                                       desc='Transforming graphs ...')
                 ]
+                time_end = time.process_time()
+                duration = (time_end - time_begin)
+                print(f"duration of transformation: {duration:.2f} seconds")
+
                 tran_graphbatch = tran_graph_list[0].collate(
                     tran_graph_list, validate=True) # noqa
                 sizes = tran_graphbatch.get_sizes()

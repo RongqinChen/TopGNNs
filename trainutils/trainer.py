@@ -4,7 +4,6 @@ import logging
 import os
 import os.path as osp
 import random
-from datetime import datetime
 from decimal import Decimal
 from typing import Tuple
 
@@ -205,9 +204,9 @@ class TrainerBase(object):
 
     def _set_logging(self) -> None:
         config = self._config
-        timestamp = datetime.now().strftime('%m%d-%H%M%S')
         datamodule_name = str(self._data_module)
         nn_model_name = config.nn_model_name.rsplit('.', 1)[1]
+        nn_model_name = nn_model_name.split('_')[0]
         self._config_key_dir = osp.join(
             self._log_root_dir, datamodule_name,
             nn_model_name, config.config_key)
@@ -215,8 +214,7 @@ class TrainerBase(object):
         exper_key = f"seed{config.seed}"
         if config.fold_idx is not None:
             exper_key = f"fold{config.fold_idx}_{exper_key}"
-        exper_log_dir = osp.join(
-            self._config_key_dir, exper_key, timestamp)
+        exper_log_dir = osp.join(self._config_key_dir, exper_key)
         self._exper_log_dir = exper_log_dir
         os.makedirs(exper_log_dir)
         config_dict = config.todict()
@@ -328,6 +326,11 @@ class TrainerBase(object):
             'valid_loss*': self._best_valid_loss,
         }
         result_dict.update({
+            key: val
+            for key, val in self._config.nn_model_args_dict.items()
+            if val is not None
+        })
+        result_dict.update({
             f'train_{key}': val
             for key, val in self._train_score_dict.items()
         })
@@ -384,7 +387,7 @@ class TrainerBase(object):
 
             self._update_statues(epoch_idx)
             self._improved = False
-            if epoch_idx > self._config.min_num_epochs and \
+            if epoch_idx >= self._config.min_num_epochs and \
                     epoch_idx - self._best_epoch > early_stoping_patience:
                 self._logger.info(
                     f'\nTraining stopped after {early_stoping_patience}'

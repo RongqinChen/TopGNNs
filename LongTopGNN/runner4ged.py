@@ -3,13 +3,9 @@ import json
 import os
 import time
 from datetime import datetime
-from typing import Tuple
-
-import torch
-from tqdm import tqdm
-
+import torch as th
 from trainutils import Config, TrainerBase
-
+from tqdm import tqdm
 os.environ['TZ'] = 'Asia/Shanghai'
 time.tzset()
 
@@ -18,54 +14,52 @@ class Trainer(TrainerBase):
     def __init__(self, config: Config) -> None:
         super().__init__(config)
 
-    def train_batch(self, batched_graph) -> float:
-        batched_graph = batched_graph.to(self.device)
-        loss_module_name = self.loss_module.__class__.__name__.lower()
-        if 'crossentropy' in loss_module_name:
-            targets = batched_graph.targets.squeeze(1)
-        if 'bcewithlogitsloss' in loss_module_name:
-            targets = batched_graph.targets.float()
-
+    def train_batch(self, batch) -> float:
+        ged_ts, gbatch, gidxs = batch
+        ged_ts = ged_ts.to(self.device)
+        gbatch = gbatch.to(self.device)
+        gidxs = gidxs.to(self.device)
         self.optimizer.zero_grad()
-        preds = self.nn_model(batched_graph)
-        loss = self.loss_module(preds, targets)
+        graph_h = self.nn_model.encode(gbatch)
+        left_h = th.index_select(graph_h, 0, gidxs[0])
+        right_h = th.index_select(graph_h, 0, gidxs[1])
+        preds = th.mean(th.abs(left_h - right_h), dim=1, keepdim=True)
+        loss = self.loss_module(preds, ged_ts)
         loss.backward()
         self.optimizer.step()
-        loss_val = loss.item()
-        return loss_val
+        return loss.item()
 
-    def evaluate_epoch(self, loader, data_split) -> Tuple[float, float]:
+    def evaluate_epoch(self, loader, data_split):
         targets_list = []
         preds_list = []
         self.nn_model.eval()
-        with torch.no_grad():
+        with th.no_grad():
             with tqdm(loader, total=len(loader), dynamic_ncols=True,
                       disable=self.disable_tqdm) as batches_tqdm:
-                for idx, batched_graph in enumerate(batches_tqdm):
+                for idx, batch in enumerate(batches_tqdm):
                     desc = f'Evaluating on {data_split} set'
                     desc = f'{desc:30s} | Iteration #{idx+1}/{len(loader)}'
                     batches_tqdm.set_description(desc)
-                    batched_graph = batched_graph.to(self.device)
-                    targets = batched_graph.targets
-                    targets_list.append(targets)
-                    preds = self.nn_model(batched_graph)
-                    preds_list.append(preds)
+                    ged_ts, gbatch, gidxs = batch
+                    gbatch = gbatch.to(self.device)
+                    gidxs = gidxs.to(self.device)
+                    targets_list.append(ged_ts)
+                    graph_h = self.nn_model.encode(gbatch)
+                    left_h = th.index_select(graph_h, 0, gidxs[0])
+                    right_h = th.index_select(graph_h, 0, gidxs[1])
+                    preds = th.mean(th.abs(left_h-right_h),
+                                    dim=1, keepdim=True)
+                    preds_list.append(preds.cpu())
 
-            targets = torch.concat(targets_list, 0)
-            preds = torch.concat(preds_list, 0)
-            loss_module_name = self.loss_module.__class__.__name__.lower()
-            if 'crossentropy' in loss_module_name:
-                targets = targets.squeeze(1)
-            if 'bcewithlogitsloss' in loss_module_name:
-                targets = targets.float()
-            score = self.evaluator(preds, targets)
-            loss = self.loss_module(preds, targets).detach().cpu().item()
-
+        targets = th.concat(targets_list, 0)
+        preds = th.concat(preds_list, 0)
+        score = self.evaluator(preds, targets)
+        loss = self.loss_module(preds, targets).item()
         return loss, score
 
 
 def set_config(args):
-    config_path = 'RFGNN/config/tud.json'
+    config_path = 'LongTopGNN/config/ged.json'
     with open(config_path, 'r') as rfile:
         config_dict: dict = json.load(rfile)
 
@@ -74,19 +68,18 @@ def set_config(args):
     datamodule_args_dict['transform_fn_kwargs']['height'] = args.tree_height
     config_dict['nn_model_args_dict']['height'] = args.tree_height
     config_dict['nn_model_args_dict']['readout'] = args.readout
-    config_dict['loss_module_name'] = args.loss_module_name
     config_dict['disable_tqdm'] = args.disable_tqdm
 
     config = Config()
-    config.config_key = f"{datamodule_args_dict['name']}.T{args.tree_height}."
-    timestamp = time.strftime("%y%m%d_%H%M%S")
-    config.config_key += f"{args.readout}/{timestamp}"
-    config.seed = datamodule_args_dict['seed']
+    dname = datamodule_args_dict['name']
+    config.config_key = \
+        f"{dname}.T{args.tree_height}.{args.readout}"
+    config.seed = config_dict['seed']
     config.fold_idx = None
     config.device = 0
     config.datamodule_name = f"datautils.{config_dict['datamodule_name']}"
     config.datamodule_args_dict = datamodule_args_dict
-    config.nn_model_name = f"RFGNN.{config_dict['nn_model_name']}"
+    config.nn_model_name = f"LongTopGNN.{config_dict['nn_model_name']}"
     config.nn_model_args_dict = config_dict['nn_model_args_dict']
     config.loss_module_name = config_dict['loss_module_name']
     config.loss_module_args_dict = config_dict['loss_module_args_dict']
@@ -109,19 +102,17 @@ def set_config(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Evaluating the performance of RFGNN on TU datasets.')
-    parser.add_argument('--dataset_name', type=str, default='NCI1')
-    parser.add_argument('--tree_height', type=int, default=6)
-    parser.add_argument('--loss_module_name', type=str)
-    parser.add_argument('--readout', type=str, default='sum')
-    parser.add_argument('--num_runs', type=int, default=10)
+        description='Evaluating the performance of LongTopGNN on GED datasets.')
+    parser.add_argument('--dataset_name', type=str, default='AIDS700nef')
+    parser.add_argument('--tree_height', type=int)
+    parser.add_argument('--readout', type=str, default='mean')
+    parser.add_argument('--num_runs', type=int, default=5)
     parser.add_argument('--disable_tqdm', action='store_true')
     args = parser.parse_args()
 
     config = set_config(args)
-    for fold_idx in range(1, args.num_runs+1):
+    for fold_idx in range(1, args.num_runs + 1):
         config.fold_idx = fold_idx
-        config.datamodule_args_dict['fold_idx'] = fold_idx
         try:
             trainer = Trainer(config)
             trainer.run()

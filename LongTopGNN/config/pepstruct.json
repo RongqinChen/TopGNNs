@@ -1,16 +1,16 @@
 {
-    "datamodule_name": "TU_DataModule",
+    "datamodule_name": "PeptidesDataModule",
     "datamodule_args_dict": {
-        "name": null,
-        "batch_size": 32,
+        "name": "structural",
+        "batch_size": 128,
         "num_workers": 0,
         "transform": "to_TPF",
-        "transform_fn_kwargs": {},
-        "seed": 114514
+        "transform_fn_kwargs": {}
     },
-    "nn_model_name": "RFGNN_Predictor",
+    "nn_model_name": "LongTopGNN_Predictor",
     "nn_model_args_dict": {
         "height": null,
+        "hilayers": null,
         "node_feat_dim": "datamodule.num_node_attributes",
         "node_label_sizes": "datamodule.num_node_labels",
         "edge_feat_dim": "datamodule.num_edge_attributes",
@@ -19,10 +19,10 @@
         "graph_label_size": "datamodule.num_graph_labels",
         "hidden_dim": 64,
         "dropout_p": 0.0,
-        "graph_dropout_p": 0.5,
+        "graph_dropout_p": 0.0,
         "readout": "sum"
     },
-    "loss_module_name": null,
+    "loss_module_name": "torch.nn.L1Loss",
     "loss_module_args_dict": {},
     "lr": 1e-03,
     "min_lr": 1e-05,
@@ -30,13 +30,14 @@
     "optimizer_args": {
         "weight_decay": 0
     },
-    "min_num_epochs": 20,
+    "min_num_epochs": 200,
     "max_num_epochs": 350,
     "schedule_step": 50,
-    "early_stoping_patience": 20,
-    "higher_better": true,
+    "early_stoping_patience": 50,
+    "higher_better": false,
     "eval_train_step": 10,
     "lr_decay_factor": 0.5,
     "save_model_step": null,
-    "test_only_when_improved": false
+    "test_only_when_improved": false,
+    "seed": 114514
 }

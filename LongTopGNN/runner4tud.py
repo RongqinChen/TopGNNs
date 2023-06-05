@@ -22,9 +22,9 @@ class Trainer(TrainerBase):
         batched_graph = batched_graph.to(self.device)
         loss_module_name = self.loss_module.__class__.__name__.lower()
         if 'crossentropy' in loss_module_name:
-            targets = batched_graph.targets.squeeze(1)
+            targets = batched_graph.graph_label.squeeze(1)
         if 'bcewithlogitsloss' in loss_module_name:
-            targets = batched_graph.targets.float()
+            targets = batched_graph.graph_label.float()
 
         self.optimizer.zero_grad()
         preds = self.nn_model(batched_graph)
@@ -46,7 +46,8 @@ class Trainer(TrainerBase):
                     desc = f'{desc:30s} | Iteration #{idx+1}/{len(loader)}'
                     batches_tqdm.set_description(desc)
                     batched_graph = batched_graph.to(self.device)
-                    targets = batched_graph.targets
+                    loss_module_name = self.loss_module.__class__.__name__.lower() # noqa
+                    targets = batched_graph.graph_label
                     targets_list.append(targets)
                     preds = self.nn_model(batched_graph)
                     preds_list.append(preds)
@@ -65,29 +66,40 @@ class Trainer(TrainerBase):
 
 
 def set_config(args):
-    config_path = 'RFGNN/config/tud.json'
+    config_path = 'LongTopGNN/config/tud.json'
     with open(config_path, 'r') as rfile:
         config_dict: dict = json.load(rfile)
 
     datamodule_args_dict = config_dict['datamodule_args_dict']
     datamodule_args_dict['name'] = args.dataset_name
     datamodule_args_dict['transform_fn_kwargs']['height'] = args.tree_height
-    config_dict['nn_model_args_dict']['height'] = args.tree_height
-    config_dict['nn_model_args_dict']['readout'] = args.readout
+    nn_model_args_dict = config_dict['nn_model_args_dict']
+    nn_model_args_dict['hilayers'] = args.hilayers
+    nn_model_args_dict['height'] = args.tree_height
+    nn_model_args_dict['readout'] = args.readout
+    nn_model_args_dict['hidden_dim'] = args.hidden_dim
+    nn_model_args_dict['dropout_p'] = args.dropout_p
+    nn_model_args_dict['graph_dropout_p'] = args.graph_dropout_p
     config_dict['loss_module_name'] = args.loss_module_name
     config_dict['disable_tqdm'] = args.disable_tqdm
 
+    nn_para = {
+        'HD': f"{nn_model_args_dict['hidden_dim']}",
+        'DP': f"{nn_model_args_dict['dropout_p']}",
+        'GDP': f"{nn_model_args_dict['graph_dropout_p']}",
+        'RO': f"{nn_model_args_dict['readout']}",
+    }
+    nn_para_str = "".join([f"{key}{val}" for key, val in nn_para.items()])
     config = Config()
-    config.config_key = f"{datamodule_args_dict['name']}.T{args.tree_height}."
-    timestamp = time.strftime("%y%m%d_%H%M%S")
-    config.config_key += f"{args.readout}/{timestamp}"
+    config.config_key = f"T{args.tree_height}."
+    config.config_key += f"{args.readout}/{nn_para_str}"
     config.seed = datamodule_args_dict['seed']
     config.fold_idx = None
     config.device = 0
     config.datamodule_name = f"datautils.{config_dict['datamodule_name']}"
     config.datamodule_args_dict = datamodule_args_dict
-    config.nn_model_name = f"RFGNN.{config_dict['nn_model_name']}"
-    config.nn_model_args_dict = config_dict['nn_model_args_dict']
+    config.nn_model_name = f"LongTopGNN.{config_dict['nn_model_name']}"
+    config.nn_model_args_dict = nn_model_args_dict
     config.loss_module_name = config_dict['loss_module_name']
     config.loss_module_args_dict = config_dict['loss_module_args_dict']
     config.lr = config_dict['lr']
@@ -109,12 +121,16 @@ def set_config(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Evaluating the performance of RFGNN on TU datasets.')
+        description='Evaluating LongTopGNN\'s performance on TU datasets.')
     parser.add_argument('--dataset_name', type=str, default='NCI1')
-    parser.add_argument('--tree_height', type=int, default=6)
+    parser.add_argument('--hilayers', type=int)
+    parser.add_argument('--tree_height', type=int)
+    parser.add_argument('--hidden_dim', type=int, default=128)
     parser.add_argument('--loss_module_name', type=str)
     parser.add_argument('--readout', type=str, default='sum')
     parser.add_argument('--num_runs', type=int, default=10)
+    parser.add_argument('--graph_dropout_p', type=float, default=0.0)
+    parser.add_argument('--dropout_p', type=float, default=0.0)
     parser.add_argument('--disable_tqdm', action='store_true')
     args = parser.parse_args()
 

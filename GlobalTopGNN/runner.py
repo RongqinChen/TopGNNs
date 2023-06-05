@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Tuple
 
 import torch
+import numpy as np
 from tqdm import tqdm
 
 from trainutils import Config, TrainerBase
@@ -20,11 +21,7 @@ class Trainer(TrainerBase):
 
     def train_batch(self, batched_graph) -> float:
         batched_graph = batched_graph.to(self.device)
-        loss_module_name = self.loss_module.__class__.__name__.lower()
-        if 'crossentropy' in loss_module_name:
-            targets = batched_graph.targets.squeeze(1)
-        if 'bcewithlogitsloss' in loss_module_name:
-            targets = batched_graph.targets.float()
+        targets = batched_graph.targets
 
         self.optimizer.zero_grad()
         preds = self.nn_model(batched_graph)
@@ -51,42 +48,39 @@ class Trainer(TrainerBase):
                     preds = self.nn_model(batched_graph)
                     preds_list.append(preds)
 
-            targets = torch.concat(targets_list, 0)
-            preds = torch.concat(preds_list, 0)
-            loss_module_name = self.loss_module.__class__.__name__.lower()
-            if 'crossentropy' in loss_module_name:
-                targets = targets.squeeze(1)
-            if 'bcewithlogitsloss' in loss_module_name:
-                targets = targets.float()
+            targets = torch.concat(targets_list, 0).detach().cpu()
+            preds = torch.concat(preds_list, 0).detach().cpu()
+            loss = self.loss_module(preds, targets).item()
             score = self.evaluator(preds, targets)
-            loss = self.loss_module(preds, targets).detach().cpu().item()
 
         return loss, score
 
 
 def set_config(args):
-    config_path = 'RFGNN/config/tud.json'
+    config_path = f'GlobalTopGNN/config/{args.config_name}.json'
     with open(config_path, 'r') as rfile:
         config_dict: dict = json.load(rfile)
 
     datamodule_args_dict = config_dict['datamodule_args_dict']
-    datamodule_args_dict['name'] = args.dataset_name
+    if args.dataset_name is not None:
+        datamodule_args_dict['name'] = args.dataset_name
+    if args.loss_module_name is not None:
+        config_dict['loss_module_name'] = args.loss_module_name
     datamodule_args_dict['transform_fn_kwargs']['height'] = args.tree_height
+    config_dict['nn_model_args_dict']['hilayers'] = args.hilayers
     config_dict['nn_model_args_dict']['height'] = args.tree_height
     config_dict['nn_model_args_dict']['readout'] = args.readout
-    config_dict['loss_module_name'] = args.loss_module_name
     config_dict['disable_tqdm'] = args.disable_tqdm
 
     config = Config()
-    config.config_key = f"{datamodule_args_dict['name']}.T{args.tree_height}."
-    timestamp = time.strftime("%y%m%d_%H%M%S")
-    config.config_key += f"{args.readout}/{timestamp}"
-    config.seed = datamodule_args_dict['seed']
+    config.config_key = \
+        f"{datamodule_args_dict['name']}.Hi{args.hilayers}.T{args.tree_height}.{args.readout}" # noqa
+    config.seed = config_dict['seed']
     config.fold_idx = None
     config.device = 0
     config.datamodule_name = f"datautils.{config_dict['datamodule_name']}"
     config.datamodule_args_dict = datamodule_args_dict
-    config.nn_model_name = f"RFGNN.{config_dict['nn_model_name']}"
+    config.nn_model_name = f"GlobalTopGNN.{config_dict['nn_model_name']}"
     config.nn_model_args_dict = config_dict['nn_model_args_dict']
     config.loss_module_name = config_dict['loss_module_name']
     config.loss_module_args_dict = config_dict['loss_module_args_dict']
@@ -109,19 +103,26 @@ def set_config(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Evaluating the performance of RFGNN on TU datasets.')
-    parser.add_argument('--dataset_name', type=str, default='NCI1')
-    parser.add_argument('--tree_height', type=int, default=6)
+        description='Evaluating the performance of GlobalTopGNN.')
+    parser.add_argument('--config_name', type=str)
+    parser.add_argument('--dataset_name', type=str)
+    parser.add_argument('--hilayers', type=int)
+    parser.add_argument('--tree_height', type=int)
     parser.add_argument('--loss_module_name', type=str)
     parser.add_argument('--readout', type=str, default='sum')
-    parser.add_argument('--num_runs', type=int, default=10)
+    parser.add_argument('--num_runs', type=int, default=5)
     parser.add_argument('--disable_tqdm', action='store_true')
     args = parser.parse_args()
 
     config = set_config(args)
-    for fold_idx in range(1, args.num_runs+1):
+    if 'pep' in args.config_name:
+        np.random.seed(config.seed)
+        seeds = np.random.randint(0, 99999, args.num_runs)
+    else:
+        seeds = [config.seed] * args.num_runs
+    for fold_idx, seed in zip(range(1, args.num_runs + 1), seeds):
         config.fold_idx = fold_idx
-        config.datamodule_args_dict['fold_idx'] = fold_idx
+        config.seed = int(seed)
         try:
             trainer = Trainer(config)
             trainer.run()

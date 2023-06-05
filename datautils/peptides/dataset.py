@@ -16,6 +16,7 @@ from rdkit import rdBase
 from torch.utils.data import Subset
 from torch_geometric.data import download_url
 from tqdm import tqdm
+import time
 
 from datautils.graph import Graph
 
@@ -223,6 +224,8 @@ class PeptidesDataset():
         num_graphs = len(vanilla_graph_list)
         transed_graph_list = []
         saving_file = self.transed_path.rsplit('/', 1)[-1]
+
+        time_begin = time.process_time()
         for g_idx in tqdm(
             range(num_graphs), total=num_graphs,
             desc=f'Transforming graphs ({saving_file})',
@@ -232,6 +235,10 @@ class PeptidesDataset():
             transed_graph = self._transform_fn(
                 graph, **self._transform_fn_kwargs)
             transed_graph_list.append(transed_graph)
+
+        time_end = time.process_time()
+        duration = (time_end - time_begin)
+        print(f"duration of transformation: {duration:.2f} seconds")
 
         transed_graphbatch = transed_graph.collate(transed_graph_list)
         sizes = transed_graphbatch.get_sizes()

@@ -69,6 +69,7 @@ def set_config(args, fold_idx):
     config_dict['nn_model_args_dict']['readout'] = args.readout
     config_dict['nn_model_args_dict']['height'] = args.tree_height
     config_dict['disable_tqdm'] = args.disable_tqdm
+    config_dict['seed'] = args.seed
 
     config = Config()
     config.config_key = f"R{args.max_ring_size}.T{args.tree_height}.{args.readout}" # noqa
@@ -102,6 +103,7 @@ def main():
     parser = argparse.ArgumentParser(
         description='Evaluating the performance of LocalTopGNN.')
     parser.add_argument('--config_name', type=str, default='csl')
+    parser.add_argument('--seed', type=int)
     parser.add_argument('--tree_height', type=int)
     parser.add_argument('--max_ring_size', type=int)
     parser.add_argument('--loss_module_name', type=str)

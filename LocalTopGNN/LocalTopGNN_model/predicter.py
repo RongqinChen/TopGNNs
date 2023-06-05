@@ -22,7 +22,8 @@ class LocalTopGNN_Predictor(nn.Module):
         graph_feat_dim: Optional[int] = None,
         graph_label_size: Optional[List[int]] = None,
         hidden_dim: int = 64,
-        dropout_p: float = 0.25, readout: str = 'sum',
+        dropout_p: float = 0.125,
+        readout: str = 'sum',
         graph_dropout_p: float = 0.5,
         child_agg: str = 'sum',
         norm: str = 'batch',
@@ -80,3 +81,6 @@ class LocalTopGNN_Predictor(nn.Module):
         node_agg, edge_agg, ring_agg = self.encode(ptrb)
         graph_pred = self.predictor((node_agg, edge_agg, ring_agg))
         return graph_pred
+
+    def __repr__(self):
+        return "LocalTopGNN"

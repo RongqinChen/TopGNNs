@@ -27,8 +27,8 @@ loss_module_dict = {
 
 
 def run_tasks(dataset_list, gpu_idxs, heights, gpu_capacity=2):
-    MRSs = [6, 8, 10]
-    GDPs = [0.0, 0.5]
+
+    GDPs = [0, 0.5]
     DPs = [0.0]
     free_gpus = sum([[idx] * gpu_capacity for idx in gpu_idxs], list())
     running_jobs = []
@@ -37,18 +37,18 @@ def run_tasks(dataset_list, gpu_idxs, heights, gpu_capacity=2):
         TU_DataModule(dname, 1, 114514, 32, 0)
         # download the dataset and generate graphs
         # for height in range(2, 8):
-        for height, MRS, GDP, DP in product(
-                heights, MRSs, GDPs, DPs):
-            job = "python -m LocalTopGNN.runner4tud " + \
+        for height, GDP, DP in product(
+                heights, GDPs, DPs):
+            job = "python -m GlobalTopGNN.runner4tud " + \
                 f"--dataset_name {dname} " + \
                 f"--tree_height {height} " + \
-                f"--max_ring_size {MRS} " + \
                 f"--loss_module_name {loss_module_dict[dname]} " + \
                 "--readout sum " + \
                 f"--graph_dropout_p {GDP} " + \
                 f"--dropout_p {DP} " + \
                 "--disable_tqdm " + \
-                "--hidden_dim 128"
+                "--hidden_dim 128 " + \
+                "--hilayers 2"
 
             while True:
                 if len(free_gpus) > 0:
@@ -77,15 +77,17 @@ def run_tasks(dataset_list, gpu_idxs, heights, gpu_capacity=2):
 
 
 if __name__ == "__main__":
-    gpu_idxs = [0, 0]
+    # gpu_idxs = [0, 1, 2, 3]
+    gpu_idxs = [0, 0, 0]
     dataset_list = ['BZR', 'COX2', 'DHFR', 'FRANKENSTEIN',
                     'Mutagenicity', 'NCI1', 'NCI109', 'PTC_FR']
-    heights = [2, 5, 3, 4, 1, 6, ]
-    gpu_capacity = 1
+    heights = [3, 6, 4, 5, 2, 7, ]
+    gpu_capacity = 2
     run_tasks(dataset_list, gpu_idxs, heights, gpu_capacity)
 
-    dataset_list = ['PROTEINS_full', 'ENZYMES']
-    heights = [2, 5, 3, 4, 1, 6, ]
-    gpu_idxs = [0]
+    dataset_list = ['ENZYMES',  'PROTEINS_full']
+    # gpu_idxs = [0, 1, 2, 3]
+    gpu_idxs = [0, 0, 0]
     gpu_capacity = 1
     run_tasks(dataset_list, gpu_idxs, heights, gpu_capacity)
+    heights = [3, 6, 4, 5, 2, ]
