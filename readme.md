@@ -1,10 +1,8 @@
-
 # Powerful Graph Topology Neural Networks: Capturing Local, Modelling Global
 
 ## Create Experiment Environment
 
-[](create_environment.md)
-
+[Instructions for creating the experiment environment](create_environment.md)
 
 ## Reproducibility
 
@@ -23,20 +21,22 @@ bash csl_tasks.sh
 ## TUDatasets
 
 ### RFGNN
+
 ```bash
 python -m pyscripts.run_tu_RFGNN
 ```
 
 ### LocalTopGNN
+
 ```bash
 python -m pyscripts.run_tu_LocalTopGNN
 ```
 
 ### LongTopGNN
+
 ```bash
 python -m pyscripts.run_tu_LongTopGNN
 ```
-
 
 ### GlobalTopGNN
 
